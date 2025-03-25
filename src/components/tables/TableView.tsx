@@ -1,11 +1,10 @@
-
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Edit, Trash2, Plus, Download, Upload, Search, X, Filter } from 'lucide-react';
+import { Edit, Trash2, Plus, Download, Upload, Search, X, Filter, Mic } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -15,6 +14,7 @@ import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import TableActions from './TableActions';
 import CsvUpload from './CsvUpload';
+import VoiceInputDialog from '@/components/ui/VoiceInputDialog';
 
 type TableViewProps = {
   table: any;
@@ -32,6 +32,7 @@ const TableView = ({ table }: TableViewProps) => {
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [isEditing, setIsEditing] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
+  const [showVoiceInput, setShowVoiceInput] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -157,7 +158,25 @@ const TableView = ({ table }: TableViewProps) => {
       // Prepare data for update
       const updateData: Record<string, any> = {};
       columns.forEach(col => {
-        updateData[col] = formData[col] !== null ? formData[col] : null;
+        // Special handling for days_of_week which is an array
+        if (col === 'days_of_week') {
+          if (formData[col] === '') {
+            updateData[col] = null;
+          } else if (typeof formData[col] === 'string') {
+            // If it's a comma-separated string, convert to array
+            if (formData[col].includes(',')) {
+              updateData[col] = formData[col].split(',').map((day: string) => day.trim());
+            } else {
+              // If it's a single value, make it a single-item array
+              updateData[col] = [formData[col].trim()];
+            }
+          } else {
+            // If it's already an array or null, keep it as is
+            updateData[col] = formData[col];
+          }
+        } else {
+          updateData[col] = formData[col] !== null ? formData[col] : null;
+        }
       });
       
       const { data: updatedData, error: updateError } = await supabase
@@ -168,7 +187,7 @@ const TableView = ({ table }: TableViewProps) => {
         
       if (updateError) {
         console.error('Error updating record:', updateError);
-        toast.error('Failed to update record');
+        toast.error('Failed to update record: ' + updateError.message);
         return;
       }
       
@@ -197,7 +216,25 @@ const TableView = ({ table }: TableViewProps) => {
       // Prepare data for insert
       const insertData: Record<string, any> = {};
       columns.forEach(col => {
-        insertData[col] = formData[col] !== null ? formData[col] : null;
+        // Special handling for days_of_week which is an array
+        if (col === 'days_of_week') {
+          if (formData[col] === '') {
+            insertData[col] = null;
+          } else if (typeof formData[col] === 'string') {
+            // If it's a comma-separated string, convert to array
+            if (formData[col].includes(',')) {
+              insertData[col] = formData[col].split(',').map((day: string) => day.trim());
+            } else {
+              // If it's a single value, make it a single-item array
+              insertData[col] = [formData[col].trim()];
+            }
+          } else {
+            // If it's already an array or null, keep it as is
+            insertData[col] = formData[col];
+          }
+        } else {
+          insertData[col] = formData[col] !== null ? formData[col] : null;
+        }
       });
       
       const { data: newRecord, error: insertError } = await supabase
@@ -207,7 +244,7 @@ const TableView = ({ table }: TableViewProps) => {
         
       if (insertError) {
         console.error('Error adding record:', insertError);
-        toast.error('Failed to add record');
+        toast.error('Failed to insert record: ' + insertError.message);
         return;
       }
       
@@ -260,6 +297,58 @@ const TableView = ({ table }: TableViewProps) => {
     }
   };
 
+  const handleVoiceInputComplete = async (collectedData: Record<string, any>) => {
+    try {
+      setLoading(true);
+
+      const tableName = table.name.toLowerCase();
+      
+      // Prepare data for insert
+      const insertData = { ...collectedData };
+      
+      // Special handling for days_of_week
+      if (insertData.days_of_week) {
+        if (typeof insertData.days_of_week === 'string') {
+          if (insertData.days_of_week.trim() === '') {
+            insertData.days_of_week = null;
+          } else if (insertData.days_of_week.includes(',')) {
+            insertData.days_of_week = insertData.days_of_week.split(',').map((day: string) => day.trim());
+          } else {
+            insertData.days_of_week = [insertData.days_of_week.trim()];
+          }
+        }
+      }
+      
+      // Add center_id from table if it's not in the collected data
+      if (table.center_id && !insertData.center_id) {
+        insertData.center_id = table.center_id;
+      }
+      
+      const { data: newRecord, error: insertError } = await supabase
+        .from(tableName)
+        .insert([insertData])
+        .select();
+        
+      if (insertError) {
+        console.error('Error adding record via voice:', insertError);
+        toast.error('Failed to insert record: ' + insertError.message);
+        return;
+      }
+      
+      toast.success('Record added successfully via voice input');
+      
+      // Update local state
+      setData([...data, newRecord[0]]);
+      setFilteredData([...filteredData, newRecord[0]]);
+      
+    } catch (err) {
+      console.error('Error in handleVoiceInputComplete:', err);
+      toast.error('An error occurred while adding record');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -300,8 +389,22 @@ const TableView = ({ table }: TableViewProps) => {
           
           setFormData(defaultFormData);
         }}
+        onUpload={() => setShowUpload(true)}
         onRefresh={() => window.location.reload()}
       />
+      
+      {/* Show Add Student with Voice button only on students table */}
+      {table.name.toLowerCase() === 'students' && (
+        <div className="mb-4">
+          <Button 
+            onClick={() => setShowVoiceInput(true)}
+            className="bg-ishanya-green hover:bg-ishanya-green/90 text-white flex items-center gap-2"
+          >
+            <Mic className="h-4 w-4" />
+            Add Student with Voice
+          </Button>
+        </div>
+      )}
       
       {showUpload && (
         <Card className="mb-6">
@@ -445,6 +548,16 @@ const TableView = ({ table }: TableViewProps) => {
           </Table>
         </div>
       </div>
+      
+      {/* Voice Input Dialog */}
+      {showVoiceInput && (
+        <VoiceInputDialog
+          isOpen={showVoiceInput}
+          onClose={() => setShowVoiceInput(false)}
+          table="students"
+          onComplete={handleVoiceInputComplete}
+        />
+      )}
     </div>
   );
 };
