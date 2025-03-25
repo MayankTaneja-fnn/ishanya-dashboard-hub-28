@@ -305,21 +305,17 @@ const processFieldData = (data: Record<string, any>): Record<string, any> => {
   for (const [key, value] of Object.entries(result)) {
     // Handle arrays that might come in as strings
     if (typeof value === 'string' && 
-        (key === 'days_of_week' || key === 'timings' || key.includes('array'))) {
+        (key === 'days_of_week' || key.includes('array'))) {
       try {
         // If it's already a properly formatted JSON array, this will work
         if (value.startsWith('[') && value.endsWith(']')) {
           result[key] = JSON.parse(value);
         } 
-        // If it's a single quoted number, remove quotes and create an array with one element
-        else if (/^"[0-9]+"$/.test(value)) {
-          result[key] = [Number(value.replace(/"/g, ''))];
-        }
         // If it's a comma-separated list, convert to array
         else if (value.includes(',')) {
           result[key] = value.split(',').map(item => item.trim());
         }
-        // If it's a single value, make it an array with one element
+        // If it's a single value and not empty, make it an array with one element
         else if (value.trim() !== '') {
           result[key] = [value.trim()];
         }

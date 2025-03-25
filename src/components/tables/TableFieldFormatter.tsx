@@ -1,11 +1,15 @@
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-// Helper function to capitalize the first letter of each word
-export const capitalizeFirstLetter = (str: string) => {
-  return str
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+import React from 'react';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DatePicker } from '@/components/ui/date-picker';
+import { format, isValid, parse } from 'date-fns';
+import { MultiSelect } from './MultiSelect';
+
+export const capitalizeFirstLetter = (string: string) => {
+  if (!string) return '';
+  return string.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 };
 
 interface TableFieldFormatterProps {
@@ -16,238 +20,281 @@ interface TableFieldFormatterProps {
   isRequired?: boolean;
 }
 
-export const TableFieldFormatter = ({ 
-  fieldName, 
-  value, 
-  onChange, 
-  isEditing, 
-  isRequired = false 
-}: TableFieldFormatterProps) => {
-  // Handle empty values
-  const displayValue = value !== null && value !== undefined ? value : '';
-  
-  // Check if the field is likely to be an array
-  const isArrayField = fieldName === 'days_of_week' || 
-                      fieldName === 'timings' || 
-                      fieldName.includes('array');
-  
-  // Format array values for display
-  const formatArrayForDisplay = (arrayValue: any) => {
-    if (!arrayValue) return '';
-    
-    if (Array.isArray(arrayValue)) {
-      return arrayValue.join(', ');
-    }
-    
-    try {
-      if (typeof arrayValue === 'string') {
-        if (arrayValue.startsWith('[') && arrayValue.endsWith(']')) {
-          return JSON.parse(arrayValue).join(', ');
+export const TableFieldFormatter: React.FC<TableFieldFormatterProps> = ({
+  fieldName,
+  value,
+  onChange,
+  isEditing,
+  isRequired = false
+}) => {
+  // Helper function to handle array fields
+  const formatArrayField = (value: any): string[] => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.map(v => v?.toString() || '');
+    if (typeof value === 'string') {
+      if (value.trim() === '') return [];
+      // Try to parse as JSON if it starts with [ and ends with ]
+      if (value.startsWith('[') && value.endsWith(']')) {
+        try {
+          return JSON.parse(value);
+        } catch (e) {
+          console.error(`Error parsing JSON array for ${fieldName}:`, e);
         }
-        return arrayValue;
       }
-      return String(arrayValue);
-    } catch (e) {
-      console.error(`Error formatting array value for ${fieldName}:`, e);
-      return String(arrayValue);
+      // If it's a comma-separated list
+      return value.split(',').map(item => item.trim());
+    }
+    return [];
+  };
+
+  // Format array field values back to string for display
+  const formatArrayForDisplay = (value: any): string => {
+    if (!value) return '';
+    if (Array.isArray(value)) return value.join(', ');
+    return String(value);
+  };
+
+  // Determine if field is date type
+  const isDateField = fieldName.includes('date') || fieldName === 'dob';
+  
+  // Determine if field is a multi-select or array field
+  const isArrayField = fieldName === 'days_of_week' || fieldName.includes('array');
+
+  // Determine if field is boolean
+  const isBooleanField = typeof value === 'boolean' || fieldName.includes('is_') || fieldName === 'attendance';
+  
+  // Determine if field is a select list
+  const isSelectField = 
+    fieldName === 'gender' || 
+    fieldName === 'blood_group' || 
+    fieldName === 'status' || 
+    fieldName === 'priority' || 
+    fieldName === 'session_type' ||
+    fieldName === 'employment_type' || 
+    fieldName === 'transport';
+  
+  // Options for select fields
+  const getSelectOptions = (field: string) => {
+    switch (field) {
+      case 'gender':
+        return ['Male', 'Female', 'Other'];
+      case 'blood_group':
+        return ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'Unknown'];
+      case 'status':
+        return ['Active', 'Inactive', 'On Leave', 'Graduated', 'Transferred'];
+      case 'priority':
+        return ['High', 'Medium', 'Low'];
+      case 'session_type':
+        return ['Individual', 'Group', 'Online', 'Hybrid'];
+      case 'employment_type':
+        return ['Full-time', 'Part-time', 'Contract', 'Intern', 'Volunteer'];
+      case 'transport':
+        return ['School Bus', 'Parent Drop', 'Public Transport', 'Self', 'Not Required'];
+      default:
+        return [];
     }
   };
-  
-  // Format array input for database storage
-  const formatArrayForStorage = (inputValue: string) => {
-    // If empty, return null or an empty array
-    if (!inputValue.trim()) {
-      return null;
-    }
-    
-    // Convert comma-separated string to proper PostgreSQL array format
-    const values = inputValue.split(',').map(item => item.trim());
-    
-    // For arrays with only numbers
-    if (values.every(val => !isNaN(Number(val)))) {
-      return values.map(val => Number(val));
-    }
-    
-    // For mixed or string arrays
-    return values;
-  };
-  
-  // Special formatting for date fields
-  if (fieldName.includes('date') || fieldName === 'dob' || fieldName === 'created_at') {
-    // If editing, render a date picker
-    if (isEditing) {
+
+  // For password fields
+  const isPasswordField = fieldName === 'password';
+
+  // For text area fields
+  const isTextAreaField = 
+    fieldName === 'address' || 
+    fieldName === 'comments' || 
+    fieldName === 'description' || 
+    fieldName === 'strengths' || 
+    fieldName === 'weakness' || 
+    fieldName === 'primary_diagnosis' || 
+    fieldName === 'comorbidity' || 
+    fieldName === 'allergies';
+
+  if (isEditing) {
+    // Date picker for date fields
+    if (isDateField) {
+      let dateValue = null;
+      if (value) {
+        try {
+          // Try to parse the date
+          const parsedDate = new Date(value);
+          if (isValid(parsedDate)) {
+            dateValue = parsedDate;
+          }
+        } catch (e) {
+          console.error(`Error parsing date for ${fieldName}:`, e);
+        }
+      }
+      
       return (
-        <Input
-          type="date"
-          value={displayValue ? displayValue.split('T')[0] : ''}
-          onChange={(e) => onChange(e.target.value)}
-          className={isRequired && !displayValue ? "border-red-500" : ""}
+        <DatePicker
+          date={dateValue}
+          onSelect={(date) => onChange(date ? format(date, 'yyyy-MM-dd') : '')}
+          className="w-full"
           required={isRequired}
         />
       );
     }
     
-    // Otherwise, just display the formatted date
-    return <div>{displayValue ? new Date(displayValue).toLocaleDateString() : '-'}</div>;
-  }
-  
-  // Special formatting for array fields
-  if (isArrayField) {
-    if (isEditing) {
+    // Array / multi-select field
+    if (isArrayField) {
+      const arrayValues = formatArrayField(value);
+      
+      // For days of week, use a specific component
+      if (fieldName === 'days_of_week') {
+        const daysOptions = [
+          { value: '1', label: 'Monday' },
+          { value: '2', label: 'Tuesday' },
+          { value: '3', label: 'Wednesday' },
+          { value: '4', label: 'Thursday' },
+          { value: '5', label: 'Friday' },
+          { value: '6', label: 'Saturday' },
+          { value: '7', label: 'Sunday' },
+        ];
+        
+        return (
+          <MultiSelect
+            options={daysOptions}
+            selected={arrayValues}
+            onChange={(selected) => {
+              onChange(selected.length > 0 ? selected : null);
+            }}
+            placeholder="Select days"
+          />
+        );
+      }
+      
+      // For general array fields, use a comma-separated input
       return (
         <Input
-          value={formatArrayForDisplay(displayValue)}
+          value={formatArrayForDisplay(value)}
           onChange={(e) => {
-            const formattedValue = formatArrayForStorage(e.target.value);
-            onChange(formattedValue);
+            // Store as comma-separated string for now
+            onChange(e.target.value);
           }}
           placeholder="Enter comma-separated values"
-          className={isRequired && !displayValue ? "border-red-500" : ""}
           required={isRequired}
         />
       );
     }
     
-    return <div>{formatArrayForDisplay(displayValue) || '-'}</div>;
-  }
-  
-  // Password field special handling
-  if (fieldName === 'password') {
-    if (isEditing) {
+    // Boolean field
+    if (isBooleanField) {
+      return (
+        <Select
+          value={value === true ? 'true' : value === false ? 'false' : ''}
+          onValueChange={(val) => onChange(val === 'true' ? true : val === 'false' ? false : null)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="true">Yes</SelectItem>
+            <SelectItem value="false">No</SelectItem>
+          </SelectContent>
+        </Select>
+      );
+    }
+    
+    // Select field
+    if (isSelectField) {
+      const options = getSelectOptions(fieldName);
+      
+      return (
+        <Select
+          value={value || ''}
+          onValueChange={onChange}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder={`Select ${capitalizeFirstLetter(fieldName)}`} />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      );
+    }
+    
+    // Password field
+    if (isPasswordField) {
       return (
         <Input
           type="password"
-          value={displayValue}
+          value={value || ''}
           onChange={(e) => onChange(e.target.value)}
-          autoComplete="new-password"
-          className={isRequired && !displayValue ? "border-red-500" : ""}
+          placeholder="Enter password"
           required={isRequired}
         />
       );
     }
     
-    return <div>••••••••</div>;
-  }
-  
-  // Default handling for most fields
-  if (isEditing) {
-    // Special handling for numeric fields
-    if (
-      fieldName.includes('_id') || 
-      fieldName.includes('number') || 
-      fieldName.includes('year')
-    ) {
+    // Textarea for longer text
+    if (isTextAreaField) {
       return (
-        <Input
-          type="number"
-          value={displayValue}
-          onChange={(e) => {
-            const numValue = e.target.value !== '' ? Number(e.target.value) : '';
-            onChange(numValue);
-          }}
-          className={isRequired && !displayValue ? "border-red-500" : ""}
+        <Textarea
+          value={value || ''}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={`Enter ${fieldName.replace(/_/g, ' ')}`}
+          rows={3}
           required={isRequired}
         />
       );
     }
     
-    // For gender field
-    if (fieldName === 'gender') {
-      return (
-        <Select
-          value={displayValue || ""}
-          onValueChange={onChange}
-        >
-          <SelectTrigger className={isRequired && !displayValue ? "border-red-500" : ""}>
-            <SelectValue placeholder="Select gender" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Male">Male</SelectItem>
-            <SelectItem value="Female">Female</SelectItem>
-            <SelectItem value="Other">Other</SelectItem>
-            <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
-          </SelectContent>
-        </Select>
-      );
-    }
-    
-    // For status field
-    if (fieldName === 'status') {
-      return (
-        <Select
-          value={displayValue || ""}
-          onValueChange={onChange}
-        >
-          <SelectTrigger className={isRequired && !displayValue ? "border-red-500" : ""}>
-            <SelectValue placeholder="Select status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Active">Active</SelectItem>
-            <SelectItem value="Inactive">Inactive</SelectItem>
-            <SelectItem value="On Leave">On Leave</SelectItem>
-            <SelectItem value="Graduated">Graduated</SelectItem>
-            <SelectItem value="Transferred">Transferred</SelectItem>
-          </SelectContent>
-        </Select>
-      );
-    }
-    
-    // For session_type field
-    if (fieldName === 'session_type') {
-      return (
-        <Select
-          value={displayValue || ""}
-          onValueChange={onChange}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select session type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Individual">Individual</SelectItem>
-            <SelectItem value="Group">Group</SelectItem>
-            <SelectItem value="Hybrid">Hybrid</SelectItem>
-          </SelectContent>
-        </Select>
-      );
-    }
-    
-    // For blood_group field
-    if (fieldName === 'blood_group') {
-      return (
-        <Select
-          value={displayValue || ""}
-          onValueChange={onChange}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select blood group" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="A+">A+</SelectItem>
-            <SelectItem value="A-">A-</SelectItem>
-            <SelectItem value="B+">B+</SelectItem>
-            <SelectItem value="B-">B-</SelectItem>
-            <SelectItem value="AB+">AB+</SelectItem>
-            <SelectItem value="AB-">AB-</SelectItem>
-            <SelectItem value="O+">O+</SelectItem>
-            <SelectItem value="O-">O-</SelectItem>
-          </SelectContent>
-        </Select>
-      );
-    }
-    
-    // For all other fields, render a simple text input
+    // Default input field
     return (
       <Input
-        value={displayValue}
+        type={fieldName.includes('email') ? 'email' : 'text'}
+        value={value !== null && value !== undefined ? value : ''}
         onChange={(e) => onChange(e.target.value)}
-        className={isRequired && !displayValue ? "border-red-500" : ""}
+        placeholder={`Enter ${fieldName.replace(/_/g, ' ')}`}
         required={isRequired}
       />
     );
   }
   
-  // For display mode (non-editing)
-  return <div>{displayValue || '-'}</div>;
+  // Read-only view
+  if (isArrayField) {
+    const arrayValues = formatArrayField(value);
+    
+    if (fieldName === 'days_of_week') {
+      const daysMap: Record<string, string> = {
+        '1': 'Monday',
+        '2': 'Tuesday',
+        '3': 'Wednesday',
+        '4': 'Thursday',
+        '5': 'Friday',
+        '6': 'Saturday',
+        '7': 'Sunday'
+      };
+      
+      return <span>{arrayValues.map(day => daysMap[day] || day).join(', ')}</span>;
+    }
+    
+    return <span>{formatArrayForDisplay(value)}</span>;
+  }
+  
+  if (isDateField && value) {
+    try {
+      const date = new Date(value);
+      if (isValid(date)) {
+        return <span>{format(date, 'PPP')}</span>;
+      }
+    } catch (e) {
+      console.error(`Error formatting date for display: ${value}`, e);
+    }
+  }
+  
+  if (isPasswordField) {
+    return <span>••••••••</span>;
+  }
+  
+  if (isBooleanField) {
+    return <span>{value === true ? 'Yes' : value === false ? 'No' : '-'}</span>;
+  }
+  
+  return <span>{value !== null && value !== undefined ? String(value) : '-'}</span>;
 };
-
-export default TableFieldFormatter;

@@ -300,22 +300,41 @@ const FilteredTableView = ({ table }: FilteredTableViewProps) => {
     setIsFormEditing(true);
   };
 
-  // Update the handleSaveClick function to properly handle created_at
+  // Update the handleSaveClick function to properly handle created_at and array fields
   const handleSaveClick = async () => {
     try {
       const tableName = table.name.toLowerCase();
       const idField = tableName === 'students' ? 'student_id' : 
                       (tableName === 'employees' || tableName === 'educators') ? 'employee_id' : 'id';
       
-      // Ensure created_at is set for new records
+      // Pre-process data for saving
       const dataToSave = { ...formData };
-      if (!selectedRow) {
-        // For new records, always set created_at to current timestamp
-        dataToSave.created_at = new Date().toISOString();
-      } else if (!dataToSave.created_at) {
-        // For existing records, if created_at is empty, set it
+      
+      // Ensure created_at is set for all records
+      if (!dataToSave.created_at || dataToSave.created_at === '') {
         dataToSave.created_at = new Date().toISOString();
       }
+      
+      // Pre-process arrays before sending to the database
+      // This is critical for days_of_week which is stored as an array
+      if (dataToSave.days_of_week) {
+        // If it's already an array, keep it; otherwise convert from string
+        if (!Array.isArray(dataToSave.days_of_week)) {
+          if (typeof dataToSave.days_of_week === 'string') {
+            if (dataToSave.days_of_week.trim() === '') {
+              dataToSave.days_of_week = null;
+            } else if (dataToSave.days_of_week.includes(',')) {
+              dataToSave.days_of_week = dataToSave.days_of_week.split(',').map(d => d.trim());
+            } else {
+              dataToSave.days_of_week = [dataToSave.days_of_week.trim()];
+            }
+          } else if (dataToSave.days_of_week === null || dataToSave.days_of_week === undefined) {
+            dataToSave.days_of_week = null;
+          }
+        }
+      }
+      
+      console.log("Data being saved:", dataToSave);
       
       // Check if this is a new record or an update
       if (selectedRow) {
@@ -327,7 +346,7 @@ const FilteredTableView = ({ table }: FilteredTableViewProps) => {
         
         if (error) {
           console.error('Error updating record:', error);
-          toast.error('Failed to update record', { duration: 3000 });
+          toast.error(`Failed to update record: ${error.message}`, { duration: 3000 });
           return;
         }
         
@@ -398,7 +417,7 @@ const FilteredTableView = ({ table }: FilteredTableViewProps) => {
         
         if (error) {
           console.error('Error inserting record:', error);
-          toast.error('Failed to insert record', { duration: 3000 });
+          toast.error(`Failed to insert record: ${error.message}`, { duration: 3000 });
           return;
         }
         
