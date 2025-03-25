@@ -154,32 +154,15 @@ const TableView = ({ table }: TableViewProps) => {
       setError(null);
 
       const tableName = table.name.toLowerCase();
-      
-      // Process the formData before sending to Supabase
-      const processedData = { ...formData };
-      
-      // Special handling for days_of_week array
-      if (processedData.days_of_week && typeof processedData.days_of_week === 'string') {
-        if (processedData.days_of_week.trim() === '') {
-          processedData.days_of_week = null;
-        } else {
-          // Convert to proper array format
-          processedData.days_of_week = processedData.days_of_week
-            .split(',')
-            .map((day: string) => day.trim())
-            .filter((day: string) => day);
-        }
-      }
-
       const { data: updatedData, error } = await supabase
         .from(tableName)
-        .update(processedData)
+        .update(formData)
         .eq('id', selectedRow.id)
         .select();
 
       if (error) {
         console.error('Update error:', error);
-        toast.error(`Failed to update record: ${error.message}`);
+        toast.error('Failed to update record');
         return;
       }
 
@@ -202,31 +185,14 @@ const TableView = ({ table }: TableViewProps) => {
       setError(null);
 
       const tableName = table.name.toLowerCase();
-      
-      // Process the formData before sending to Supabase
-      const processedData = { ...formData };
-      
-      // Special handling for days_of_week array
-      if (processedData.days_of_week && typeof processedData.days_of_week === 'string') {
-        if (processedData.days_of_week.trim() === '') {
-          processedData.days_of_week = null;
-        } else {
-          // Convert to proper array format
-          processedData.days_of_week = processedData.days_of_week
-            .split(',')
-            .map((day: string) => day.trim())
-            .filter((day: string) => day);
-        }
-      }
-
       const { data: newRecord, error } = await supabase
         .from(tableName)
-        .insert([processedData])
+        .insert([formData])
         .select();
 
       if (error) {
         console.error('Insert error:', error);
-        toast.error(`Failed to add record: ${error.message}`);
+        toast.error('Failed to add record');
         return;
       }
 
@@ -249,31 +215,12 @@ const TableView = ({ table }: TableViewProps) => {
       setError(null);
       
       const tableName = table.name.toLowerCase();
-      
-      // Process the voice input data
-      const processedData = { ...data };
-      
-      // Special handling for days_of_week array
-      if (processedData.days_of_week && typeof processedData.days_of_week === 'string') {
-        if (processedData.days_of_week.trim() === '') {
-          processedData.days_of_week = null;
-        } else {
-          // Convert to proper array format
-          processedData.days_of_week = processedData.days_of_week
-            .split(',')
-            .map((day: string) => day.trim())
-            .filter((day: string) => day);
-        }
-      }
-      
-      // Ensure created_at is set
-      if (!processedData.created_at) {
-        processedData.created_at = new Date().toISOString();
-      }
-      
       const { data: newRecord, error } = await supabase
         .from(tableName)
-        .insert([processedData])
+        .insert([{
+          ...data,
+          created_at: new Date().toISOString()
+        }])
         .select();
 
       if (error) {
@@ -332,7 +279,7 @@ const TableView = ({ table }: TableViewProps) => {
           </CardHeader>
           <CardContent>
             {columns.map(column => (
-              <div key={column} className="mb-4">
+              <div key={column}>
                 <Label htmlFor={column}>{column}</Label>
                 <Input id={column} name={column} value={formData[column]} onChange={handleInputChange} />
               </div>

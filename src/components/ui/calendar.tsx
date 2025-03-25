@@ -1,7 +1,7 @@
 
 import * as React from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { DayPicker } from "react-day-picker";
+import { DayPicker, YearDropdown, MonthDropdown } from "react-day-picker";
 
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
@@ -50,17 +50,40 @@ function Calendar({
         day_range_middle:
           "aria-selected:bg-accent aria-selected:text-accent-foreground",
         day_hidden: "invisible",
+        caption_dropdowns: "flex justify-center gap-1 pl-8 pr-8",
+        dropdown: "relative inline-flex bg-white dark:bg-gray-800 rounded-md shadow-sm mx-1",
+        dropdown_month: "appearance-none pl-2 pr-6 py-1 border rounded-md bg-white dark:bg-gray-800",
+        dropdown_year: "appearance-none pl-2 pr-6 py-1 border rounded-md bg-white dark:bg-gray-800",
+        dropdown_icon: "absolute right-2 top-2.5 text-gray-400",
         ...classNames,
       }}
       components={{
-        IconLeft: ({ ...props }) => <ChevronLeft className="h-4 w-4" />,
-        IconRight: ({ ...props }) => <ChevronRight className="h-4 w-4" />,
+        IconLeft: ({ ..._props }) => <ChevronLeft className="h-4 w-4" />,
+        IconRight: ({ ..._props }) => <ChevronRight className="h-4 w-4" />,
+        Dropdown: ({ value, onChange, children, name, ...props }) => {
+          return (
+            <select
+              name={name}
+              value={value}
+              onChange={onChange}
+              className={cn(
+                "appearance-none pl-2 pr-6 py-1 border rounded-md bg-white dark:bg-gray-800",
+                name === "months" ? "dropdown_month" : "dropdown_year"
+              )}
+              {...props}
+            >
+              {children}
+            </select>
+          );
+        },
       }}
+      captionLayout="dropdown-buttons"
+      fromYear={1950}
+      toYear={2050}
       {...props}
     />
   );
 }
-
 Calendar.displayName = "Calendar";
 
 export { Calendar };
