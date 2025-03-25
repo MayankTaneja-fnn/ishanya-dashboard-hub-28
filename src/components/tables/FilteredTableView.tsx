@@ -300,18 +300,29 @@ const FilteredTableView = ({ table }: FilteredTableViewProps) => {
     setIsFormEditing(true);
   };
 
+  // Update the handleSaveClick function to properly handle created_at
   const handleSaveClick = async () => {
     try {
       const tableName = table.name.toLowerCase();
       const idField = tableName === 'students' ? 'student_id' : 
                       (tableName === 'employees' || tableName === 'educators') ? 'employee_id' : 'id';
       
+      // Ensure created_at is set for new records
+      const dataToSave = { ...formData };
+      if (!selectedRow) {
+        // For new records, always set created_at to current timestamp
+        dataToSave.created_at = new Date().toISOString();
+      } else if (!dataToSave.created_at) {
+        // For existing records, if created_at is empty, set it
+        dataToSave.created_at = new Date().toISOString();
+      }
+      
       // Check if this is a new record or an update
       if (selectedRow) {
         // Update existing record
         const { error } = await supabase
           .from(tableName)
-          .update(formData)
+          .update(dataToSave)
           .eq(idField, selectedRow[idField]);
         
         if (error) {
@@ -322,14 +333,14 @@ const FilteredTableView = ({ table }: FilteredTableViewProps) => {
         
         // If it's employee or educator, sync data between the tables
         if ((tableName === 'employees' || tableName === 'educators') && 
-            formData.employee_id && formData.department === 'Education') {
+            dataToSave.employee_id && dataToSave.department === 'Education') {
           
           const sharedFields = ['name', 'email', 'phone', 'work_location', 'date_of_birth', 'date_of_joining', 'center_id'];
           const syncData: Record<string, any> = {};
           
           sharedFields.forEach(field => {
-            if (formData[field] !== undefined) {
-              syncData[field] = formData[field];
+            if (dataToSave[field] !== undefined) {
+              syncData[field] = dataToSave[field];
             }
           });
           
@@ -338,7 +349,7 @@ const FilteredTableView = ({ table }: FilteredTableViewProps) => {
             const { error: syncError } = await supabase
               .from(otherTable)
               .update(syncData)
-              .eq('employee_id', formData.employee_id);
+              .eq('employee_id', dataToSave.employee_id);
               
             if (syncError) {
               console.error(`Error syncing with ${otherTable}:`, syncError);
@@ -350,7 +361,7 @@ const FilteredTableView = ({ table }: FilteredTableViewProps) => {
         
         // Update the records in the UI
         const updatedData = data.map(item => 
-          item[idField] === selectedRow[idField] ? { ...item, ...formData } : item
+          item[idField] === selectedRow[idField] ? { ...item, ...dataToSave } : item
         );
         setData(updatedData);
         setFilteredData(updatedData);
@@ -361,23 +372,23 @@ const FilteredTableView = ({ table }: FilteredTableViewProps) => {
         // Create typed data for insertion based on the table type
         if (tableName === 'educators') {
           // Create a properly typed educator record
-          const educatorData: Partial<EducatorRecord> = { ...formData };
+          const educatorData: Partial<EducatorRecord> = { ...dataToSave };
           insertData = [educatorData];
         } else if (tableName === 'employees') {
           // Create a properly typed employee record
-          const employeeData: Partial<EmployeeRecord> = { ...formData };
+          const employeeData: Partial<EmployeeRecord> = { ...dataToSave };
           insertData = [employeeData];
         } else if (tableName === 'students') {
           // Create a properly typed student record
-          const studentData: Partial<StudentRecord> = { ...formData };
+          const studentData: Partial<StudentRecord> = { ...dataToSave };
           insertData = [studentData];
         } else if (tableName === 'centers') {
           // Create a properly typed center record
-          const centerData: Partial<CenterRecord> = { ...formData };
+          const centerData: Partial<CenterRecord> = { ...dataToSave };
           insertData = [centerData];
         } else {
           // Generic fallback for other tables
-          insertData = [formData];
+          insertData = [dataToSave];
         }
         
         const { data: insertedData, error } = await supabase
@@ -393,14 +404,14 @@ const FilteredTableView = ({ table }: FilteredTableViewProps) => {
         
         // If it's employee or educator with Education department, create in both tables
         if ((tableName === 'employees' || tableName === 'educators') && 
-            formData.employee_id && formData.department === 'Education') {
+            dataToSave.employee_id && dataToSave.department === 'Education') {
           
           const sharedFields = ['employee_id', 'name', 'email', 'phone', 'work_location', 'date_of_birth', 'date_of_joining', 'center_id'];
           const syncData: Record<string, any> = {};
           
           sharedFields.forEach(field => {
-            if (formData[field] !== undefined) {
-              syncData[field] = formData[field];
+            if (dataToSave[field] !== undefined) {
+              syncData[field] = dataToSave[field];
             }
           });
           
@@ -410,7 +421,7 @@ const FilteredTableView = ({ table }: FilteredTableViewProps) => {
           const { data: existingData } = await supabase
             .from(otherTable)
             .select('*')
-            .eq('employee_id', formData.employee_id)
+            .eq('employee_id', dataToSave.employee_id)
             .limit(1);
             
           if (existingData && existingData.length === 0) {

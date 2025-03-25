@@ -1,320 +1,184 @@
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-import { useState, useEffect } from 'react';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import { cn } from '@/lib/utils';
-import { format, isValid, parse } from 'date-fns';
-import { Calendar as CalendarIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { fetchCenters, fetchProgramsByCenter } from '@/lib/api';
-import { supabase } from '@/integrations/supabase/client';
-
-type TableFieldFormatterProps = {
-  fieldName: string;
-  value: any;
-  onChange: (value: any) => void;
-  isEditing: boolean;
-  isRequired?: boolean;
-};
-
-// Helper function to capitalize first letter of each word
-export const capitalizeFirstLetter = (str: string): string => {
+// Helper function to capitalize the first letter of each word
+export const capitalizeFirstLetter = (str: string) => {
   return str
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
-export const TableFieldFormatter = ({ fieldName, value, onChange, isEditing, isRequired = false }: TableFieldFormatterProps) => {
-  const [centers, setCenters] = useState<any[]>([]);
-  const [programs, setPrograms] = useState<any[]>([]);
-  const [employees, setEmployees] = useState<any[]>([]);
+interface TableFieldFormatterProps {
+  fieldName: string;
+  value: any;
+  onChange: (value: any) => void;
+  isEditing: boolean;
+  isRequired?: boolean;
+}
+
+export const TableFieldFormatter = ({ 
+  fieldName, 
+  value, 
+  onChange, 
+  isEditing, 
+  isRequired = false 
+}: TableFieldFormatterProps) => {
+  // Handle empty values
+  const displayValue = value !== null && value !== undefined ? value : '';
   
-  // Safe toString conversion that handles undefined/null values
-  const safeToString = (val: any): string => {
-    if (val === null || val === undefined) return '';
-    return String(val);
+  // Check if the field is likely to be an array
+  const isArrayField = fieldName === 'days_of_week' || 
+                      fieldName === 'timings' || 
+                      fieldName.includes('array');
+  
+  // Format array values for display
+  const formatArrayForDisplay = (arrayValue: any) => {
+    if (!arrayValue) return '';
+    
+    if (Array.isArray(arrayValue)) {
+      return arrayValue.join(', ');
+    }
+    
+    try {
+      if (typeof arrayValue === 'string') {
+        if (arrayValue.startsWith('[') && arrayValue.endsWith(']')) {
+          return JSON.parse(arrayValue).join(', ');
+        }
+        return arrayValue;
+      }
+      return String(arrayValue);
+    } catch (e) {
+      console.error(`Error formatting array value for ${fieldName}:`, e);
+      return String(arrayValue);
+    }
   };
-
-  useEffect(() => {
-    // Fetch centers for center_id field
-    if (fieldName === 'center_id' && isEditing) {
-      const loadCenters = async () => {
-        try {
-          const { data, error } = await supabase
-            .from('centers')
-            .select('center_id, name')
-            .order('name');
-            
-          if (!error && data) {
-            setCenters(data);
-          }
-        } catch (err) {
-          console.error('Error loading centers:', err);
-        }
-      };
-      
-      loadCenters();
+  
+  // Format array input for database storage
+  const formatArrayForStorage = (inputValue: string) => {
+    // If empty, return null or an empty array
+    if (!inputValue.trim()) {
+      return null;
     }
     
-    // Fetch programs for program_id field
-    if ((fieldName === 'program_id' || fieldName === 'program_2_id') && isEditing) {
-      const loadPrograms = async () => {
-        try {
-          const { data, error } = await supabase
-            .from('programs')
-            .select('program_id, name')
-            .order('name');
-            
-          if (!error && data) {
-            setPrograms(data);
-          }
-        } catch (err) {
-          console.error('Error loading programs:', err);
-        }
-      };
-      
-      loadPrograms();
+    // Convert comma-separated string to proper PostgreSQL array format
+    const values = inputValue.split(',').map(item => item.trim());
+    
+    // For arrays with only numbers
+    if (values.every(val => !isNaN(Number(val)))) {
+      return values.map(val => Number(val));
     }
     
-    // Fetch employees/educators for educator fields
-    if ((fieldName === 'educator_employee_id' || fieldName === 'secondary_educator_employee_id') && isEditing) {
-      const loadEmployees = async () => {
-        try {
-          const { data, error } = await supabase
-            .from('educators')
-            .select('employee_id, name')
-            .order('name');
-            
-          if (!error && data) {
-            setEmployees(data);
-          }
-        } catch (err) {
-          console.error('Error loading educators:', err);
-        }
-      };
-      
-      loadEmployees();
+    // For mixed or string arrays
+    return values;
+  };
+  
+  // Special formatting for date fields
+  if (fieldName.includes('date') || fieldName === 'dob' || fieldName === 'created_at') {
+    // If editing, render a date picker
+    if (isEditing) {
+      return (
+        <Input
+          type="date"
+          value={displayValue ? displayValue.split('T')[0] : ''}
+          onChange={(e) => onChange(e.target.value)}
+          className={isRequired && !displayValue ? "border-red-500" : ""}
+          required={isRequired}
+        />
+      );
     }
-  }, [fieldName, isEditing]);
-
-  // Special handling for password field
+    
+    // Otherwise, just display the formatted date
+    return <div>{displayValue ? new Date(displayValue).toLocaleDateString() : '-'}</div>;
+  }
+  
+  // Special formatting for array fields
+  if (isArrayField) {
+    if (isEditing) {
+      return (
+        <Input
+          value={formatArrayForDisplay(displayValue)}
+          onChange={(e) => {
+            const formattedValue = formatArrayForStorage(e.target.value);
+            onChange(formattedValue);
+          }}
+          placeholder="Enter comma-separated values"
+          className={isRequired && !displayValue ? "border-red-500" : ""}
+          required={isRequired}
+        />
+      );
+    }
+    
+    return <div>{formatArrayForDisplay(displayValue) || '-'}</div>;
+  }
+  
+  // Password field special handling
   if (fieldName === 'password') {
     if (isEditing) {
       return (
         <Input
           type="password"
-          value={safeToString(value)}
+          value={displayValue}
           onChange={(e) => onChange(e.target.value)}
-          className={isRequired ? "border-red-500" : ""}
+          autoComplete="new-password"
+          className={isRequired && !displayValue ? "border-red-500" : ""}
+          required={isRequired}
         />
       );
     }
+    
     return <div>••••••••</div>;
   }
-
-  // Handle date fields
-  if (fieldName.includes('date') || fieldName === 'dob' || fieldName === 'created_at') {
-    if (isEditing) {
+  
+  // Default handling for most fields
+  if (isEditing) {
+    // Special handling for numeric fields
+    if (
+      fieldName.includes('_id') || 
+      fieldName.includes('number') || 
+      fieldName.includes('year')
+    ) {
       return (
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              className={cn(
-                "w-full justify-start text-left font-normal",
-                !value && "text-muted-foreground",
-                isRequired && "border-red-500"
-              )}
-            >
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {value ? format(new Date(value), 'PPP') : "Select date"}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0">
-            <Calendar
-              mode="single"
-              selected={value ? new Date(value) : undefined}
-              onSelect={(date) => onChange(date ? format(date, 'yyyy-MM-dd') : null)}
-              initialFocus
-            />
-          </PopoverContent>
-        </Popover>
-      );
-    }
-    
-    if (!value) return <div>-</div>;
-    
-    try {
-      const date = new Date(value);
-      return <div>{isValid(date) ? format(date, 'MMM d, yyyy') : safeToString(value)}</div>;
-    } catch (e) {
-      return <div>{safeToString(value)}</div>;
-    }
-  }
-
-  // Handle center_id field
-  if (fieldName === 'center_id') {
-    if (isEditing) {
-      return (
-        <Select
-          value={value ? safeToString(value) : ''}
-          onValueChange={(val) => onChange(val ? parseInt(val, 10) : null)}
-        >
-          <SelectTrigger className={isRequired ? "border-red-500" : ""}>
-            <SelectValue placeholder="Select center" />
-          </SelectTrigger>
-          <SelectContent>
-            {centers.map((center) => (
-              <SelectItem key={center.center_id} value={safeToString(center.center_id)}>
-                {center.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      );
-    }
-    
-    if (!value) return <div>-</div>;
-    
-    // Try to find the center name
-    const center = centers.find(c => c.center_id === value);
-    return <div>{center ? center.name : safeToString(value)}</div>;
-  }
-
-  // Handle program_id fields
-  if (fieldName === 'program_id' || fieldName === 'program_2_id') {
-    if (isEditing) {
-      return (
-        <Select
-          value={value ? safeToString(value) : ''}
-          onValueChange={(val) => onChange(val ? parseInt(val, 10) : null)}
-        >
-          <SelectTrigger className={isRequired ? "border-red-500" : ""}>
-            <SelectValue placeholder="Select program" />
-          </SelectTrigger>
-          <SelectContent>
-            {/* Changed from empty string to "none" with a value */}
-            <SelectItem value="0">None</SelectItem>
-            {programs.map((program) => (
-              <SelectItem key={program.program_id} value={safeToString(program.program_id)}>
-                {program.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      );
-    }
-    
-    if (!value) return <div>-</div>;
-    
-    // Try to find the program name
-    const program = programs.find(p => p.program_id === value);
-    return <div>{program ? program.name : safeToString(value)}</div>;
-  }
-
-  // Handle educator fields
-  if (fieldName === 'educator_employee_id' || fieldName === 'secondary_educator_employee_id') {
-    if (isEditing) {
-      return (
-        <Select
-          value={value ? safeToString(value) : ''}
-          onValueChange={(val) => onChange(val ? parseInt(val, 10) : null)}
-        >
-          <SelectTrigger className={isRequired ? "border-red-500" : ""}>
-            <SelectValue placeholder="Select educator" />
-          </SelectTrigger>
-          <SelectContent>
-            {fieldName === 'secondary_educator_employee_id' && (
-              // Changed from empty string to "0" with a value
-              <SelectItem value="0">None</SelectItem>
-            )}
-            {employees.map((employee) => (
-              <SelectItem key={employee.employee_id} value={safeToString(employee.employee_id)}>
-                {employee.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      );
-    }
-    
-    if (!value) return <div>-</div>;
-    
-    // Try to find the employee name
-    const employee = employees.find(e => e.employee_id === value);
-    return <div>{employee ? employee.name : safeToString(value)}</div>;
-  }
-
-  // Handle boolean fields
-  if (typeof value === 'boolean' || fieldName.includes('is_')) {
-    if (isEditing) {
-      return (
-        <Select
-          value={value === true ? 'true' : value === false ? 'false' : ''}
-          onValueChange={(val) => {
-            if (val === 'true') onChange(true);
-            else if (val === 'false') onChange(false);
-            else onChange(null);
+        <Input
+          type="number"
+          value={displayValue}
+          onChange={(e) => {
+            const numValue = e.target.value !== '' ? Number(e.target.value) : '';
+            onChange(numValue);
           }}
-        >
-          <SelectTrigger className={isRequired ? "border-red-500" : ""}>
-            <SelectValue placeholder="Select value" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="true">Yes</SelectItem>
-            <SelectItem value="false">No</SelectItem>
-            {!isRequired && (
-              // Changed from empty string to "null" with a value
-              <SelectItem value="null">Not specified</SelectItem>
-            )}
-          </SelectContent>
-        </Select>
+          className={isRequired && !displayValue ? "border-red-500" : ""}
+          required={isRequired}
+        />
       );
     }
     
-    if (value === null || value === undefined) return <div>-</div>;
-    return <div>{value ? 'Yes' : 'No'}</div>;
-  }
-
-  // Handle gender field
-  if (fieldName === 'gender') {
-    if (isEditing) {
+    // For gender field
+    if (fieldName === 'gender') {
       return (
         <Select
-          value={safeToString(value)}
+          value={displayValue || ""}
           onValueChange={onChange}
         >
-          <SelectTrigger className={isRequired ? "border-red-500" : ""}>
+          <SelectTrigger className={isRequired && !displayValue ? "border-red-500" : ""}>
             <SelectValue placeholder="Select gender" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="Male">Male</SelectItem>
             <SelectItem value="Female">Female</SelectItem>
             <SelectItem value="Other">Other</SelectItem>
-            {!isRequired && (
-              // Changed from empty string to "unspecified" with a value
-              <SelectItem value="unspecified">Not specified</SelectItem>
-            )}
+            <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
           </SelectContent>
         </Select>
       );
     }
     
-    return <div>{value || '-'}</div>;
-  }
-
-  // Handle status field
-  if (fieldName === 'status') {
-    if (isEditing) {
+    // For status field
+    if (fieldName === 'status') {
       return (
         <Select
-          value={safeToString(value)}
+          value={displayValue || ""}
           onValueChange={onChange}
         >
-          <SelectTrigger className={isRequired ? "border-red-500" : ""}>
+          <SelectTrigger className={isRequired && !displayValue ? "border-red-500" : ""}>
             <SelectValue placeholder="Select status" />
           </SelectTrigger>
           <SelectContent>
@@ -322,25 +186,39 @@ export const TableFieldFormatter = ({ fieldName, value, onChange, isEditing, isR
             <SelectItem value="Inactive">Inactive</SelectItem>
             <SelectItem value="On Leave">On Leave</SelectItem>
             <SelectItem value="Graduated">Graduated</SelectItem>
-            <SelectItem value="Suspended">Suspended</SelectItem>
-            <SelectItem value="Alumni">Alumni</SelectItem>
+            <SelectItem value="Transferred">Transferred</SelectItem>
           </SelectContent>
         </Select>
       );
     }
     
-    return <div>{value || '-'}</div>;
-  }
-
-  // Handle blood_group field
-  if (fieldName === 'blood_group') {
-    if (isEditing) {
+    // For session_type field
+    if (fieldName === 'session_type') {
       return (
         <Select
-          value={safeToString(value)}
+          value={displayValue || ""}
           onValueChange={onChange}
         >
-          <SelectTrigger className={isRequired ? "border-red-500" : ""}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select session type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Individual">Individual</SelectItem>
+            <SelectItem value="Group">Group</SelectItem>
+            <SelectItem value="Hybrid">Hybrid</SelectItem>
+          </SelectContent>
+        </Select>
+      );
+    }
+    
+    // For blood_group field
+    if (fieldName === 'blood_group') {
+      return (
+        <Select
+          value={displayValue || ""}
+          onValueChange={onChange}
+        >
+          <SelectTrigger>
             <SelectValue placeholder="Select blood group" />
           </SelectTrigger>
           <SelectContent>
@@ -352,174 +230,24 @@ export const TableFieldFormatter = ({ fieldName, value, onChange, isEditing, isR
             <SelectItem value="AB-">AB-</SelectItem>
             <SelectItem value="O+">O+</SelectItem>
             <SelectItem value="O-">O-</SelectItem>
-            {!isRequired && (
-              // Changed from empty string to "unknown" with a value
-              <SelectItem value="unknown">Not specified</SelectItem>
-            )}
           </SelectContent>
         </Select>
       );
     }
     
-    return <div>{value || '-'}</div>;
-  }
-
-  // Handle employment_type field
-  if (fieldName === 'employment_type') {
-    if (isEditing) {
-      return (
-        <Select
-          value={safeToString(value)}
-          onValueChange={onChange}
-        >
-          <SelectTrigger className={isRequired ? "border-red-500" : ""}>
-            <SelectValue placeholder="Select employment type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Full-time">Full-time</SelectItem>
-            <SelectItem value="Part-time">Part-time</SelectItem>
-            <SelectItem value="Contract">Contract</SelectItem>
-            <SelectItem value="Temporary">Temporary</SelectItem>
-            <SelectItem value="Intern">Intern</SelectItem>
-            {!isRequired && (
-              // Changed from empty string to "unspecified" with a value
-              <SelectItem value="unspecified">Not specified</SelectItem>
-            )}
-          </SelectContent>
-        </Select>
-      );
-    }
-    
-    return <div>{value || '-'}</div>;
-  }
-
-  // Handle department field
-  if (fieldName === 'department') {
-    if (isEditing) {
-      return (
-        <Select
-          value={safeToString(value)}
-          onValueChange={onChange}
-        >
-          <SelectTrigger className={isRequired ? "border-red-500" : ""}>
-            <SelectValue placeholder="Select department" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Administration">Administration</SelectItem>
-            <SelectItem value="Education">Education</SelectItem>
-            <SelectItem value="Finance">Finance</SelectItem>
-            <SelectItem value="Human Resources">Human Resources</SelectItem>
-            <SelectItem value="IT">IT</SelectItem>
-            <SelectItem value="Operations">Operations</SelectItem>
-            <SelectItem value="Support Staff">Support Staff</SelectItem>
-            {!isRequired && (
-              // Changed from empty string to "unspecified" with a value  
-              <SelectItem value="unspecified">Not specified</SelectItem>
-            )}
-          </SelectContent>
-        </Select>
-      );
-    }
-    
-    return <div>{value || '-'}</div>;
-  }
-
-  // Handle array fields (like days_of_week)
-  if (fieldName === 'days_of_week' || Array.isArray(value)) {
-    if (isEditing) {
-      // Provide a text input for comma-separated values
-      return (
-        <Input
-          value={Array.isArray(value) ? value.join(', ') : safeToString(value)}
-          onChange={(e) => {
-            const inputValue = e.target.value;
-            // Handle empty input
-            if (!inputValue.trim()) {
-              onChange(null);
-              return;
-            }
-            
-            // Parse comma-separated string to array
-            const arrayValue = inputValue.split(',').map(item => item.trim());
-            onChange(arrayValue);
-          }}
-          placeholder="Enter comma-separated values (e.g., Monday, Wednesday, Friday)"
-          className={isRequired ? "border-red-500" : ""}
-        />
-      );
-    }
-    
-    if (!value) return <div>-</div>;
-    
-    // Safely display array values
-    if (Array.isArray(value)) {
-      return <div>{value.map(v => safeToString(v)).join(', ')}</div>;
-    }
-    
-    // Handle string representation of array
-    return <div>{safeToString(value)}</div>;
-  }
-
-  // Default field handling
-  if (isEditing) {
-    // Use textarea for potentially longer text fields
-    if (
-      fieldName.includes('description') ||
-      fieldName.includes('comment') ||
-      fieldName.includes('notes') ||
-      fieldName.includes('address') ||
-      fieldName.includes('strengths') ||
-      fieldName.includes('weakness') ||
-      fieldName === 'allergies'
-    ) {
-      return (
-        <Textarea
-          value={safeToString(value)}
-          onChange={(e) => onChange(e.target.value)}
-          className={isRequired ? "border-red-500" : ""}
-          rows={3}
-        />
-      );
-    }
-    
-    // Use regular input for other fields
+    // For all other fields, render a simple text input
     return (
       <Input
-        value={safeToString(value)}
+        value={displayValue}
         onChange={(e) => onChange(e.target.value)}
-        className={isRequired ? "border-red-500" : ""}
-        type={
-          fieldName.includes('phone') || fieldName.includes('number') || 
-          fieldName.includes('contact') || 
-          fieldName.includes('_id') || fieldName.includes('year')
-            ? 'tel'
-            : fieldName.includes('email')
-              ? 'email'
-              : 'text'
-        }
+        className={isRequired && !displayValue ? "border-red-500" : ""}
+        required={isRequired}
       />
     );
   }
   
-  // For read-only display
-  if (value === null || value === undefined) return <div>-</div>;
-  
-  // Handle potentially long text for display
-  if (
-    fieldName.includes('description') ||
-    fieldName.includes('comment') ||
-    fieldName.includes('notes') ||
-    fieldName.includes('address') ||
-    fieldName.includes('strengths') ||
-    fieldName.includes('weakness') ||
-    fieldName === 'allergies'
-  ) {
-    return (
-      <div className="max-h-24 overflow-y-auto whitespace-pre-wrap">
-        {safeToString(value)}
-      </div>
-    );
-  }
-  
-  return <div>{safeToString(value)}</div>;
+  // For display mode (non-editing)
+  return <div>{displayValue || '-'}</div>;
 };
+
+export default TableFieldFormatter;

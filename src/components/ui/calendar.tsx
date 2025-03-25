@@ -58,7 +58,7 @@ function Calendar({
       }}
       captionLayout="dropdown-buttons"
       fromYear={1950}
-      toYear={new Date().getFullYear()}
+      toYear={2050}
       {...props}
     />
   );
