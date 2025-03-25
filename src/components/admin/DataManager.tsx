@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { UserPlus, GraduationCap, UserCog, Mic } from 'lucide-react';
+import { UserPlus, GraduationCap, UserCog } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import supabase from '@/lib/api';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import VoiceInputDialog from '@/components/ui/VoiceInputDialog';
 
 const DataManager = () => {
   const [activeTab, setActiveTab] = useState('students');
@@ -25,7 +24,6 @@ const DataManager = () => {
   const [programs, setPrograms] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCenter, setSelectedCenter] = useState<string | null>(null);
-  const [showVoiceInputDialog, setShowVoiceInputDialog] = useState(false);
 
   const studentSchema = z.object({
     first_name: z.string().min(2, { message: 'First name is required' }),
@@ -145,66 +143,6 @@ const DataManager = () => {
   const handleOpenEducatorDialog = () => {
     fetchCenters();
     setShowEducatorDialog(true);
-  };
-
-  const handleOpenVoiceInputDialog = () => {
-    fetchCenters();
-    setShowVoiceInputDialog(true);
-  };
-
-  const handleVoiceInputComplete = async (data: Record<string, any>) => {
-    setIsLoading(true);
-    
-    try {
-      let result;
-      
-      if (activeTab === 'students') {
-        const { data: studentData, error } = await supabase
-          .from('students')
-          .insert({
-            ...data,
-            created_at: new Date().toISOString(),
-          })
-          .select();
-
-        if (error) throw error;
-        result = studentData;
-        toast.success('Student created successfully via voice input');
-      } 
-      else if (activeTab === 'educators') {
-        const { data: educatorData, error } = await supabase
-          .from('educators')
-          .insert({
-            ...data,
-            created_at: new Date().toISOString(),
-          })
-          .select();
-
-        if (error) throw error;
-        result = educatorData;
-        toast.success('Educator created successfully via voice input');
-      }
-      else if (activeTab === 'employees') {
-        const { data: employeeData, error } = await supabase
-          .from('employees')
-          .insert({
-            ...data,
-            created_at: new Date().toISOString(),
-          })
-          .select();
-
-        if (error) throw error;
-        result = employeeData;
-        toast.success('Employee created successfully via voice input');
-      }
-      
-      setShowVoiceInputDialog(false);
-    } catch (error: any) {
-      console.error(`Error creating ${activeTab.slice(0, -1)}:`, error);
-      toast.error(`Failed to create ${activeTab.slice(0, -1)}: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   const handleCenterChange = (centerId: string, formType: 'student' | 'employee' | 'educator') => {
@@ -341,7 +279,7 @@ const DataManager = () => {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="students" className="mt-4">
-            <div className="text-center space-y-4">
+            <div className="text-center">
               <Button 
                 onClick={handleOpenStudentDialog}
                 className="bg-ishanya-green hover:bg-ishanya-green/90 text-white"
@@ -349,25 +287,10 @@ const DataManager = () => {
                 <UserPlus className="mr-2 h-4 w-4" />
                 Add New Student
               </Button>
-              
-              <div className="flex items-center justify-center">
-                <div className="border-t border-gray-300 w-1/3"></div>
-                <div className="mx-3 text-gray-500">or</div>
-                <div className="border-t border-gray-300 w-1/3"></div>
-              </div>
-              
-              <Button 
-                onClick={handleOpenVoiceInputDialog}
-                variant="outline"
-                className="border-ishanya-green text-ishanya-green hover:bg-ishanya-green/10"
-              >
-                <Mic className="mr-2 h-4 w-4" />
-                Add Student with Voice
-              </Button>
             </div>
           </TabsContent>
           <TabsContent value="educators" className="mt-4">
-            <div className="text-center space-y-4">
+            <div className="text-center">
               <Button 
                 onClick={handleOpenEducatorDialog}
                 className="bg-ishanya-yellow hover:bg-ishanya-yellow/90 text-white"
@@ -375,46 +298,16 @@ const DataManager = () => {
                 <GraduationCap className="mr-2 h-4 w-4" />
                 Add New Educator
               </Button>
-              
-              <div className="flex items-center justify-center">
-                <div className="border-t border-gray-300 w-1/3"></div>
-                <div className="mx-3 text-gray-500">or</div>
-                <div className="border-t border-gray-300 w-1/3"></div>
-              </div>
-              
-              <Button 
-                onClick={handleOpenVoiceInputDialog}
-                variant="outline"
-                className="border-ishanya-yellow text-ishanya-yellow hover:bg-ishanya-yellow/10"
-              >
-                <Mic className="mr-2 h-4 w-4" />
-                Add Educator with Voice
-              </Button>
             </div>
           </TabsContent>
           <TabsContent value="employees" className="mt-4">
-            <div className="text-center space-y-4">
+            <div className="text-center">
               <Button 
                 onClick={handleOpenEmployeeDialog}
                 className="bg-purple-500 hover:bg-purple-400 text-white"
               >
                 <UserCog className="mr-2 h-4 w-4" />
                 Add New Employee
-              </Button>
-              
-              <div className="flex items-center justify-center">
-                <div className="border-t border-gray-300 w-1/3"></div>
-                <div className="mx-3 text-gray-500">or</div>
-                <div className="border-t border-gray-300 w-1/3"></div>
-              </div>
-              
-              <Button 
-                onClick={handleOpenVoiceInputDialog}
-                variant="outline"
-                className="border-purple-500 text-purple-500 hover:bg-purple-50"
-              >
-                <Mic className="mr-2 h-4 w-4" />
-                Add Employee with Voice
               </Button>
             </div>
           </TabsContent>
@@ -896,13 +789,6 @@ const DataManager = () => {
             </Form>
           </DialogContent>
         </Dialog>
-
-        <VoiceInputDialog 
-          isOpen={showVoiceInputDialog}
-          onClose={() => setShowVoiceInputDialog(false)}
-          table={activeTab}
-          onComplete={handleVoiceInputComplete}
-        />
       </CardContent>
     </Card>
   );

@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -27,11 +28,13 @@ import {
   Search,
   X,
   AlertCircle,
+  Mic,
 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import TableActions from './TableActions';
 import CsvUpload from './CsvUpload';
+import VoiceInputDialog from '@/components/ui/VoiceInputDialog';
 
 type TableViewProps = {
   table: any;
@@ -49,6 +52,7 @@ const TableView = ({ table }: TableViewProps) => {
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [isEditing, setIsEditing] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
+  const [showVoiceInputDialog, setShowVoiceInputDialog] = useState(false);
 
   // Fetch table data and columns
   useEffect(() => {
@@ -204,6 +208,44 @@ const TableView = ({ table }: TableViewProps) => {
     }
   };
 
+  // Handle voice input completion
+  const handleVoiceInputComplete = async (data: Record<string, any>) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const tableName = table.name.toLowerCase();
+      const { data: newRecord, error } = await supabase
+        .from(tableName)
+        .insert([{
+          ...data,
+          created_at: new Date().toISOString()
+        }])
+        .select();
+
+      if (error) {
+        console.error('Insert error:', error);
+        toast.error(`Failed to add record via voice: ${error.message}`);
+        return;
+      }
+
+      toast.success(`${tableName} created successfully via voice input`);
+      setData(prev => [...prev, newRecord[0]]);
+      setFilteredData(prev => [...prev, newRecord[0]]);
+      setShowVoiceInputDialog(false);
+    } catch (err) {
+      console.error(`Error creating ${table.name}:`, err);
+      toast.error('An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle adding with voice
+  const handleAddWithVoice = () => {
+    setShowVoiceInputDialog(true);
+  };
+
   return (
     <div>
       <TableActions
@@ -215,6 +257,20 @@ const TableView = ({ table }: TableViewProps) => {
         }}
         onRefresh={() => window.location.reload()}
       />
+
+      {/* Voice Add Button for Students Table */}
+      {table.name.toLowerCase() === 'students' && (
+        <div className="mb-4">
+          <Button 
+            onClick={handleAddWithVoice} 
+            variant="outline"
+            className="border-ishanya-green text-ishanya-green hover:bg-ishanya-green/10"
+          >
+            <Mic className="mr-2 h-4 w-4" />
+            Add Student with Voice
+          </Button>
+        </div>
+      )}
 
       {showForm && (
         <Card className="mb-6">
@@ -257,6 +313,16 @@ const TableView = ({ table }: TableViewProps) => {
           </TableBody>
         </Table>
       </div>
+
+      {/* Voice Input Dialog */}
+      {showVoiceInputDialog && (
+        <VoiceInputDialog 
+          isOpen={showVoiceInputDialog}
+          onClose={() => setShowVoiceInputDialog(false)}
+          table={table.name.toLowerCase()}
+          onComplete={handleVoiceInputComplete}
+        />
+      )}
     </div>
   );
 };
