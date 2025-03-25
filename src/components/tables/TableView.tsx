@@ -1,181 +1,264 @@
-import { useEffect, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
-import { toast } from "react-hot-toast";
+import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { fetchTableColumns } from '@/lib/api';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Edit,
+  Trash2,
+  Plus,
+  Search,
+  X,
+  AlertCircle,
+} from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import TableActions from './TableActions';
+import CsvUpload from './CsvUpload';
 
-interface Record {
-  id: string;
-  name: string;
-  tags?: string[]; // Example array column
-  description?: string;
-}
+type TableViewProps = {
+  table: any;
+};
 
-const EditableTable = () => {
-  const [data, setData] = useState<Record[]>([]);
-  const [filteredData, setFilteredData] = useState<Record[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
+const TableView = ({ table }: TableViewProps) => {
+  const [data, setData] = useState<any[]>([]);
+  const [columns, setColumns] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedRow, setSelectedRow] = useState<Record | null>(null);
-  const [formData, setFormData] = useState<Record | null>(null);
-  const [showForm, setShowForm] = useState<boolean>(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filteredData, setFilteredData] = useState<any[]>([]);
+  const [selectedRow, setSelectedRow] = useState<any | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState<Record<string, any>>({});
+  const [isEditing, setIsEditing] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
 
+  // Fetch table data and columns
   useEffect(() => {
-    fetchRecords();
-  }, []);
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const tableName = table.name.toLowerCase();
 
-  const fetchRecords = async () => {
-    setLoading(true);
-    try {
-      let { data, error } = await supabase.from("your_table_name").select("*");
+        const columnsData = await fetchTableColumns(tableName);
+        if (!columnsData) {
+          setError('Failed to fetch table columns');
+          return;
+        }
 
-      if (error) throw error;
-      setData(data || []);
-      setFilteredData(data || []);
-    } catch (err) {
-      setError("Failed to fetch records");
-      console.error(err);
-    } finally {
-      setLoading(false);
+        setColumns(columnsData);
+
+        let query = supabase.from(tableName).select('*');
+        if (table.center_id) {
+          query = query.eq('center_id', table.center_id);
+        }
+
+        const { data: tableData, error: fetchError } = await query;
+
+        if (fetchError) {
+          console.error('Error fetching data:', fetchError);
+          setError('Failed to fetch data');
+          return;
+        }
+
+        setData(tableData || []);
+        setFilteredData(tableData || []);
+
+        const defaultFormData: Record<string, any> = {};
+        columnsData.forEach(col => {
+          defaultFormData[col] = '';
+        });
+
+        if (table.center_id) {
+          defaultFormData.center_id = table.center_id;
+        }
+
+        setFormData(defaultFormData);
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        setError('An unexpected error occurred');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [table]);
+
+  // Filter data based on search input
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setFilteredData(data);
+      return;
     }
-  };
 
-  const handleEdit = (record: Record) => {
-    setSelectedRow(record);
-    setFormData({ ...record });
+    const searchTermLower = searchTerm.toLowerCase();
+    const filtered = data.filter(item =>
+      Object.values(item).some(value =>
+        value?.toString().toLowerCase().includes(searchTermLower)
+      )
+    );
+
+    setFilteredData(filtered);
+  }, [searchTerm, data]);
+
+  // Handle row selection for editing
+  const handleRowClick = (row: any) => {
+    setSelectedRow(row);
+    setIsEditing(true);
+
+    const rowFormData: Record<string, any> = {};
+    columns.forEach(col => {
+      rowFormData[col] = row[col] || '';
+    });
+
+    setFormData(rowFormData);
     setShowForm(true);
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    if (!formData) return;
+  // Handle input change
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-
-    // Special handling for arrays (example: tags field)
-    if (name === "tags") {
-      setFormData({ ...formData, [name]: value ? value.split(",") : [] });
-    } else {
-      setFormData({ ...formData, [name]: value });
-    }
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  // Save record update
   const handleSave = async () => {
-    if (!selectedRow || !formData) return;
+    if (!selectedRow) return;
 
     try {
       setLoading(true);
       setError(null);
 
-      // Ensure proper data format before updating
-      const fixedFormData: Record = { ...formData };
-      Object.keys(fixedFormData).forEach((key) => {
-        if (Array.isArray(fixedFormData[key as keyof Record]) && fixedFormData[key as keyof Record] === "") {
-          fixedFormData[key as keyof Record] = [];
-        }
-      });
-
-      console.log("Updating with:", fixedFormData);
-
+      const tableName = table.name.toLowerCase();
       const { data: updatedData, error } = await supabase
-        .from("your_table_name")
-        .update(fixedFormData)
-        .eq("id", selectedRow.id)
+        .from(tableName)
+        .update(formData)
+        .eq('id', selectedRow.id)
         .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Update error:', error);
+        toast.error('Failed to update record');
+        return;
+      }
 
-      toast.success("Record updated successfully");
-
-      setData((prev) => prev.map((item) => (item.id === selectedRow.id ? updatedData[0] : item)));
-      setFilteredData((prev) => prev.map((item) => (item.id === selectedRow.id ? updatedData[0] : item)));
+      toast.success('Record updated successfully');
+      setData(prev => prev.map(item => (item.id === selectedRow.id ? updatedData[0] : item)));
+      setFilteredData(prev => prev.map(item => (item.id === selectedRow.id ? updatedData[0] : item)));
       setShowForm(false);
     } catch (err) {
-      console.error("Update error:", err);
-      setError("An unexpected error occurred");
-      toast.error("Failed to update record");
+      console.error('Error updating record:', err);
+      setError('An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add new record
+  const handleAdd = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const tableName = table.name.toLowerCase();
+      const { data: newRecord, error } = await supabase
+        .from(tableName)
+        .insert([formData])
+        .select();
+
+      if (error) {
+        console.error('Insert error:', error);
+        toast.error('Failed to add record');
+        return;
+      }
+
+      toast.success('Record added successfully');
+      setData(prev => [...prev, newRecord[0]]);
+      setFilteredData(prev => [...prev, newRecord[0]]);
+      setShowForm(false);
+    } catch (err) {
+      console.error('Error adding record:', err);
+      setError('An unexpected error occurred');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="p-6">
-      <h2 className="text-xl font-bold mb-4">Editable Table</h2>
+    <div>
+      <TableActions
+        tableName={table.name}
+        onInsert={() => {
+          setShowForm(true);
+          setIsEditing(false);
+          setFormData(Object.fromEntries(columns.map(col => [col, ''])));
+        }}
+        onRefresh={() => window.location.reload()}
+      />
 
-      {loading && <p>Loading...</p>}
-      {error && <p className="text-red-500">{error}</p>}
-
-      <table className="w-full border-collapse border border-gray-300">
-        <thead>
-          <tr className="bg-gray-200">
-            <th className="border p-2">ID</th>
-            <th className="border p-2">Name</th>
-            <th className="border p-2">Tags</th>
-            <th className="border p-2">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredData.map((record) => (
-            <tr key={record.id} className="border">
-              <td className="border p-2">{record.id}</td>
-              <td className="border p-2">{record.name}</td>
-              <td className="border p-2">{record.tags?.join(", ") || "N/A"}</td>
-              <td className="border p-2">
-                <button onClick={() => handleEdit(record)} className="bg-blue-500 text-white px-2 py-1 rounded">
-                  Edit
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      {showForm && formData && (
-        <div className="mt-4 p-4 border rounded shadow-md bg-white">
-          <h3 className="text-lg font-bold mb-2">Edit Record</h3>
-
-          <label className="block mb-2">
-            Name:
-            <input
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              className="border p-2 w-full"
-            />
-          </label>
-
-          <label className="block mb-2">
-            Tags (comma-separated):
-            <input
-              type="text"
-              name="tags"
-              value={formData.tags?.join(", ") || ""}
-              onChange={handleChange}
-              className="border p-2 w-full"
-            />
-          </label>
-
-          <button
-            onClick={handleSave}
-            className="bg-green-500 text-white px-4 py-2 rounded mr-2"
-            disabled={loading}
-          >
-            {loading ? "Saving..." : "Save"}
-          </button>
-
-          <button
-            onClick={() => setShowForm(false)}
-            className="bg-gray-500 text-white px-4 py-2 rounded"
-          >
-            Cancel
-          </button>
-        </div>
+      {showForm && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>{isEditing ? 'Edit Record' : 'Add Record'}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {columns.map(column => (
+              <div key={column}>
+                <Label htmlFor={column}>{column}</Label>
+                <Input id={column} name={column} value={formData[column]} onChange={handleInputChange} />
+              </div>
+            ))}
+            <Button onClick={isEditing ? handleSave : handleAdd} className="mt-4">
+              {isEditing ? 'Save' : 'Add'}
+            </Button>
+          </CardContent>
+        </Card>
       )}
+
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {columns.map(column => (
+                <TableHead key={column}>{column}</TableHead>
+              ))}
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredData.map(row => (
+              <TableRow key={row.id}>
+                {columns.map(column => <TableCell key={column}>{row[column]}</TableCell>)}
+                <TableCell>
+                  <Button variant="ghost" onClick={() => handleRowClick(row)}><Edit /></Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 };
 
-export default EditableTable;
+export default TableView;
